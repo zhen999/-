@@ -1,0 +1,170 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(ggplot2)
+I <- as.numeric(all$infected)
+R <- as.numeric(all$removed)
+t<-nrow(all)
+
+#时间窗7天
+window<-7
+gamma<-rep(NA,(length(I)-2))
+for (t in 2:length(I)){
+  if(t<=(window+1)){
+    deltaR<-R[2:t]-R[1:(t-1)]
+    I_input<- I[1:(t-1)]
+    df.gamma<-data.frame(date=all$date[1:(t-1)],deltaR=deltaR,I=I_input)
+    fit.gamma<-lm(deltaR~I-1,df.gamma)#无截距ols
+    gamma[(t-1)]<-fit.gamma$coefficients
+  }
+  else {
+    deltaR<-R[(t-window + 1):t]-R[(t-window):(t-1)]
+    I_input<- I[(t-window):(t-1)]
+    df.gamma<-data.frame(date=all$date[(t-window):(t-1)],deltaR=deltaR,I=I_input)
+    fit.gamma<-lm(deltaR~I-1,df.gamma)#无截距ols
+    gamma[(t-1)]<-fit.gamma$coefficients
+    
+  }
+}
+gamma
+plot(gamma)
+g<-data.frame(gamma)
+
+#plot(I_input,fit.gamma)
+start<-as.numeric(rownames(all[1])[1])
+end<-as.numeric(tail(rownames(all),1))
+I.day<-seq(start,(end),1)
+df.beta<-data.frame(date=all$date,lnI=log(I),day=I.day)
+lnI<-log(I)
+```
+
+```{r}
+lnI<-log(I)
+df.betagam<-data.frame(time=I.day,lnI=log(I))
+betagam<-rep(NA,length(I))
+window<-7
+for (t in 1:length(I)){
+   if(t<=(window)){
+   I_input<- lnI[1:t]
+   df.betagam<-data.frame(date=all$date[1:t],time=I.day[1:t], lnI=lnI[1:t])
+   fit.betagam<-lm(lnI~time,df.betagam)
+   betagam[t-1]<-fit.betagam$coefficients[2]
+   }
+  else {
+    I_input<- lnI[(t-window):t]
+    df.betagam<-data.frame(date=all$date[(t-window):t],time=I.day[(t-window):t], lnI=lnI[(t-window):t])
+    fit.betagam<-lm(lnI~time,df.betagam)
+    betagam[t-1]<-fit.betagam$coefficients[2]
+  }
+}
+betagam
+beta<-gamma+betagam[1:(t-1)]
+plot(beta)
+beta
+betadf<-data.frame(date=all$date,c(beta,NA))
+gammadf<-data.frame(date=all$date,c(gamma,NA))
+
+#write.table(betadf,"beta.csv",row.names=FALSE,col.names=TRUE,sep=",")
+#write.table(gammadf,"gamma.csv",row.names=FALSE,col.names=TRUE,sep=",")
+```
+
+```{r}
+#first way to setup initial beta_0
+beta_0<-beta[1]
+scaling<-1
+ISD.iran1<-scaling*beta_0/beta
+
+ISD.iran2<-scaling*gamma/beta
+ISD.iran2
+
+plot(ISD.CHINA1,xlab = "")
+title(main = "u.s(beta_0/beta)", sub = "the first day is when confirmed>1000", xlab = "Time")
+```
+
+
+
+```{r}
+library(ggthemes)
+p1<-p + theme_calc ()+theme(text = element_text(family = 'STKaiti'))
+#p2<-g + theme_calc ()+theme(text = element_text(family = 'STKaiti'))
+p1
+#p2
+#ggsave(p1,filename = '1.jpg',width = 9,height = 6,dpi = 600)
+#ggsave(p2,filename = '2.jpg',width = 9,height = 6,dpi = 600)
+```
+
+
+```{r}
+ISD.china1*scalling[1,2]
+
+a_list<-list(ISD.china1*scalling[1,2],
+             ISD.kor1*scalling[8,2],
+ISD.u.s1*scalling[2,2],
+ISD.eng1*scalling[3,2],
+ISD.fran1*scalling[4,2],
+ISD.german1*scalling[5,2],
+ISD.ita1*scalling[6,2],
+ISD.iran1*scalling[7,2],
+ISD.swe1*scalling[9,2])
+names(a_list) = c( "china","kor","us", "eng","fra","ger","itl","iran","swe")
+method<-do.call(cbind, lapply(lapply(a_list, unlist), `length<-`, max(lengths(a_list))))
+method<-cbind(data.frame(time=1:nrow(method)),method)
+method1<-method
+p<-ggplot(method1,aes(x=time,y=ISD)) + 
+  theme_bw(base_family = "STKaiti" )+
+  geom_line(data=method1,aes(x=time,y=china,colour = '中国'))+
+  geom_line(data=method1,aes(x=time,y=kor,colour = '韩国'))+
+  geom_line(data=method1,aes(x=time,y=us,colour = '美国'))+
+  geom_line(data=method1,aes(x=time,y=eng,colour = '英国'))+
+  geom_line(data=method1,aes(x=time,y=fra,colour = '法国'))+
+  geom_line(data=method1,aes(x=time,y=ger,colour = '德国'))+
+  geom_line(data=method1,aes(x=time,y=itl,colour = '意大利'))+
+  geom_line(data=method1,aes(x=time,y=iran,colour = '伊朗'))+
+  geom_line(data=method1,aes(x=time,y=swe,colour = '瑞典'))+
+  labs(title="各国ISD指数构造",subtitle = "beta_0/beta(t)",caption = '起始日为累计感染人数超过1000')+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))
+         #panel.grid=element_blank())
+  
+```
+
+
+```{r}
+b_list<-list(#ISD.china1,
+  ISD.kor2,
+ISD.u.s2,
+ISD.eng2,
+ISD.fran2,
+ISD.german2,
+ISD.ita2,
+ISD.iran2)
+names(b_list) = c("us", "eng","fra","ger","itl","iran")
+methodb<-do.call(cbind, lapply(lapply(b_list, unlist), `length<-`, max(lengths(b_list))))
+methodb<-cbind(data.frame(time=1:nrow(methodb)),methodb)
+method2<-methodb[1:50,]
+g<-ggplot(method2,aes(x=time,y=ISD)) + 
+  theme_bw(base_family = "STKaiti" )+
+  #geom_line(data=method2,aes(x=time,y=china,colour = '中国'))+
+  geom_line(data=method2,aes(x=time,y=us,colour = '美国'))+
+  geom_line(data=method2,aes(x=time,y=eng,colour = '英国'))+
+  geom_line(data=method2,aes(x=time,y=fra,colour = '法国'))+
+  geom_line(data=method2,aes(x=time,y=ger,colour = '德国'))+
+  geom_line(data=method2,aes(x=time,y=itl,colour = '意大利'))+
+  geom_line(data=method2,aes(x=time,y=iran,colour = '伊朗'))+
+  labs(title="各国ISD指数构造",subtitle = "gamma/beta")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  labs(caption = '起始日为累计感染人数超过1000')
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

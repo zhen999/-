@@ -1,0 +1,348 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+I <- as.numeric(all$infected)
+R <- as.numeric(all$removed)
+t<-nrow(all)
+
+#时间窗5天
+window<-7
+gamma<-rep(NA,(length(I)-2))
+for (t in 2:length(I)){
+  if(t<=(window+1)){
+    deltaR<-R[2:t]-R[1:(t-1)]
+    I_input<- I[1:(t-1)]
+    df.gamma<-data.frame(date=all$date[1:(t-1)],deltaR=deltaR,I=I_input)
+    fit.gamma<-lm(deltaR~I-1,df.gamma)#无截距ols
+    gamma[(t-1)]<-fit.gamma$coefficients
+  }
+  else {
+    deltaR<-R[(t-window + 1):t]-R[(t-window):(t-1)]
+    I_input<- I[(t-window):(t-1)]
+    df.gamma<-data.frame(date=all$date[(t-window):(t-1)],deltaR=deltaR,I=I_input)
+    fit.gamma<-lm(deltaR~I-1,df.gamma)#无截距ols
+    gamma[(t-1)]<-fit.gamma$coefficients
+    
+  }
+}
+gamma
+plot(gamma)
+g<-data.frame(gamma)
+
+#plot(I_input,fit.gamma)
+start<-as.numeric(rownames(all[1])[1])
+end<-as.numeric(tail(rownames(all),1))
+I.day<-seq(start,(end),1)
+df.beta<-data.frame(date=all$date,lnI=log(I),day=I.day)
+lnI<-log(I)
+```
+
+
+```{r}
+#预测100天gamma
+deltaR <- R[2:t]-R[1:(t-1)] #时间间隔1天
+I_input<- I[1:(t-1)]
+start<-as.numeric(rownames(all[1])[1])
+end<-as.numeric(tail(rownames(all[1]),1))
+df.gamma<-data.frame(date=all$date[1:(t-1)],deltaR=deltaR,I=I_input)
+df.pre<-data.frame(day=start:(end+101))
+fit.gamma<-lm(deltaR~I-1,df.gamma)#无截距ols
+a<-fit.gamma$coefficients
+summary(fit.gamma)
+plot(df.gamma$I,df.gamma$deltaR)
+lines(df.gamma$I,fitted(fit.gamma),type="l")
+```
+
+```{r}
+lnI<-log(I)
+df.betagam<-data.frame(time=I.day,lnI=log(I))
+betagam<-rep(NA,length(I))
+window<-7
+for (t in 1:length(I)){
+   if(t<=(window)){
+   I_input<- lnI[1:t]
+   df.betagam<-data.frame(date=all$date[1:t],time=I.day[1:t], lnI=lnI[1:t])
+   fit.betagam<-lm(lnI~time,df.betagam)
+   betagam[t]<-fit.betagam$coefficients[2]
+   }
+  else {
+    I_input<- lnI[(t-window):t]
+    df.betagam<-data.frame(date=all$date[(t-window):t],time=I.day[(t-window):t], lnI=lnI[(t-window):t])
+    fit.betagam<-lm(lnI~time,df.betagam)
+    betagam[t]<-fit.betagam$coefficients[2]
+  }
+}
+
+beta<-gamma+betagam[1:(t-1)]
+beta
+```
+
+
+```{r}
+betaga<-rep(NA,(t-1))
+for (i in 1:(t-1)){
+  betaga[i]=lnI[i+1]-lnI[i]
+}
+betaga
+I.day1<-seq(start,(end-1),1)
+df.betaga<-data.frame(betaga=betaga,day=I.day1)
+loess.betaga<-loess(betaga~day,df.betaga,degree = 2)
+loess<-predict(loess.betaga, data.frame(day=I.day1))
+loess
+beta<-gamma+loess
+beta
+beta1<-beta
+ddd<-data.frame(beta)
+```
+
+
+```{r}
+#预测beta
+inputdata<-beta[(t-20):(t-1)]#过去21天数据
+mydata<-data.frame(time=1:20,beta=inputdata)
+
+df <- data.frame(time=1:length(beta),beta=1/beta)
+#fitdistr(beta1,"logistic")
+SS <- getInitial(beta ~ SSlogis(time, alpha, xmid, scale), data=mydata)
+K_start <- SS["alpha"]
+R_start <- 1/SS["scale"]
+N0_start <- SS["alpha"]/(exp(SS["xmid"]/SS["scale"])+1)
+#拟合logistics曲线
+mod<-nls(beta ~ (k*p*exp(r*time))/(k+p*(exp(r*time)-1)), data=mydata, start = list(k = K_start, r = R_start, p = N0_start))
+summary(mod)
+pred.logi<-predict(mod,newdata=data.frame(time=1:112))
+pred.logi
+#预测未来beta
+pre_beta<-pred.logi[13:112]
+
+df.g <- data.frame(time=1:12, gamma=gamma[(t-12):(t-1)])
+#fitdistr(beta1,"logistic")
+SS1 <- getInitial(gamma ~ SSlogis(time, alpha, xmid, scale), df.g)
+K1_start <- SS1["alpha"]
+R1_start <- 1/SS1["scale"]
+N01_start <- SS1["alpha"]/(exp(SS["xmid"]/SS["scale"])+1)
+#拟合logistics曲线
+mod1<-nls(gamma ~ (k*p*exp(r*time))/(k+p*(exp(r*time)-1)), data=df.g, start = list(k = K1_start, r = R1_start, p = N01_start))
+summary(mod1)
+pred.gamma<-predict(mod1,newdata=data.frame(time=1:120))
+
+
+
+
+
+
+I10<-I[(t-4):(t-1)]
+R10<-R[(t-4):t]
+deltaR10<-R10[2:5]-R10[1:4]
+
+fit.gamma5<-lm(deltaR10~I10-1)#无截距ols
+summary(fit.gamma5)
+plot(df$time,df$beta)
+lines(predict(mod,newdata=data.frame(time=1:146)),col = "red")
+pre_gamma<-coefficients(fit.gamma5)
+
+
+```
+
+
+
+```{r}
+getGamma(all,5)
+getBeta(all,5)
+mydata<-data.frame(time=1:(nrow(all)-1),beta=getBeta(all,5))
+SS <- getInitial(beta ~ SSlogis(time, alpha, xmid, scale), data=mydata)
+K_start <- SS["alpha"]
+R_start <- 1/SS["scale"]
+N0_start <- SS["alpha"]/(exp(SS["xmid"]/SS["scale"])+1)
+#拟合logistics曲线
+mod<-nls(beta ~ (k*p*exp(r*time))/(k+p*(exp(r*time)-1)), data=mydata, start = list(k = K_start, r = R_start, p = N0_start))
+summary(mod)
+pred.logi<-predict(mod,newdata=data.frame(time=1:112))
+pred.logi
+```
+
+
+```{r}
+beeta<-read.csv('/Users/zhen/疫情预测/0509/beta.csv')
+gaamma<-read.csv('/Users/zhen/疫情预测/0509/gamma.csv')
+pre_beta1<-beeta[,1]
+pre_beta2<-beeta[,2]
+pre_beta3<-beeta[,3]
+pre_gamma1<-gaamma[,1]
+pre_gamma2<-gaamma[,2]
+pre_gamma3<-gaamma[,3]
+```
+
+
+```{r}
+#画beta趋势图
+mayday<-"2020/3/20"
+temp1<- seq.Date(from =as.Date(as.character(mayday)),by = "day", length.out=100)
+logdf<-data.frame(date=temp1,beta=c(mydata$beta,rep(NA,(100-12))),pre=pred.logi[1:100])
+library(ggplot2)
+
+ggplot(logdf,aes(x=date)) + 
+  theme_grey(base_family = "STKaiti" )+
+  geom_line(data=logdf,aes(x=temp1,y=pre,colour = '拟合曲线'))+ #确诊
+  geom_point(data=logdf,aes(x=temp1,y=beta, colour = '实际感染率'))+#新增
+  xlab(" ")+
+  ylab("人数")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  labs(title="美国感染率预测")+
+  scale_x_date(date_breaks = "5 days")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))
+```
+
+
+```{r}
+#预测恢复确诊人数
+npre<-85
+dI<-rep(NA,(npre-1))
+dR<-rep(NA,(npre-1))
+II<-rep(NA,(npre-1))
+RR<-rep(NA,(npre-1))
+II[1]=I[t]
+RR[1]=R[t]
+for (i in 1:(npre-1)){
+  dI[i]= (pre_beta1[i]-pre_gamma1[i])*II[i]
+  dR[i]= pre_gamma1[i]*II[i]
+  II[i+1]= II[i]+dI[i]
+  RR[i+1]= RR[i]+dR[i]
+}
+firstday<-all$date[t]
+temp <- seq.Date(from =as.Date(as.character(firstday)),by = "day", length.out=npre)
+output1<-data.frame(date=temp,I=II,R=RR,Confirm=II+RR)
+
+dI<-rep(NA,(npre-1))
+dR<-rep(NA,(npre-1))
+II<-rep(NA,(npre-1))
+RR<-rep(NA,(npre-1))
+II[1]=I[t]
+RR[1]=R[t]
+for (i in 1:(npre-1)){
+  dI[i]= (pre_beta2[i]-pre_gamma1[i])*II[i]
+  dR[i]= pre_gamma1[i]*II[i]
+  II[i+1]= II[i]+dI[i]
+  RR[i+1]= RR[i]+dR[i]
+}
+output2<-data.frame(date=temp,I=II,R=RR,Confirm=II+RR)
+
+dI<-rep(NA,(npre-1))
+dR<-rep(NA,(npre-1))
+II<-rep(NA,(npre-1))
+RR<-rep(NA,(npre-1))
+II[1]=I[t]
+RR[1]=R[t]
+for (i in 1:(npre-1)){
+  dI[i]= (pre_beta3[i]-pre_gamma1[i])*II[i]
+  dR[i]= pre_gamma1[i]*II[i]
+  II[i+1]= II[i]+dI[i]
+  RR[i+1]= RR[i]+dR[i]
+}
+output3<-data.frame(date=temp,I=II,R=RR,Confirm=II+RR)
+
+```
+
+```{r}
+#firstday<-all$date[t]
+#temp <- seq.Date(from =as.Date(as.character(firstday)),by = "day", length.out=66)
+output1<-output1[2:npre,]
+output2<-output2[2:npre,]
+output3<-output3[2:npre,]
+for(i in 2:nrow(output1)){
+  output1$added[i]<-output1$Confirm[i]-output1$Confirm[i-1]
+  output2$added[i]<-output2$Confirm[i]-output2$Confirm[i-1]
+  output3$added[i]<-output3$Confirm[i]-output3$Confirm[i-1]
+  }
+
+#write.csv(output,"/Users/xiahaoran/Desktop/111.csv")
+```
+
+
+```{r}
+#画累计确诊，现存感染图
+library(ggplot2)
+ggplot(output1,aes(x=date)) + 
+  theme_grey(base_family = "STKaiti" )+
+  geom_line(data=output1,aes(x=temp,y=I,colour = '现存确诊'))+ #确诊
+  geom_line(data=output1,aes(x=temp,y=Confirm, colour = '累计确诊'))+#新增
+  xlab(" ")+
+  ylab("人数")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  labs(title="全球人数预测")+
+  scale_x_date(date_breaks = "5 days")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))
+#ggsave(g,filename = '1.jpg',width = 9,height = 6,dpi = 600)
+```
+
+
+```{r}
+#其他情况，手动设置beta
+library(ggthemes)
+now<-all[45:nrow(all),]
+tday<-now$date[1]
+temp1 <- seq.Date(from =as.Date(as.character(tday)),by = "day", length.out=(nrow(now)+npre-1))
+
+confirm<-data.frame(date=temp1,real=c(now$confirm,rep(NA,(npre-1))),c1=c(rep(NA,nrow(now)),output1$Confirm),c2=c(rep(NA,nrow(now)),output2$Confirm),c3=c(rep(NA,nrow(now)),output3$Confirm))
+                    #,c4=c(rep(NA,nrow(now)),output1$test))
+#write.csv(confirm,'/Users/xiahaoran/Desktop/beta1.csv')
+
+infected<-data.frame(date=temp1,real=c(now$infected,rep(NA,(npre-1))),I1=c(rep(NA,nrow(now)),output1$I),I2=c(rep(NA,nrow(now)),output2$I),I3=c(rep(NA,nrow(now)),output3$I))
+library(ggplot2)
+g1<-ggplot(confirm,aes(x=date)) + 
+  theme_grey(base_family = "STKaiti" )+
+  geom_point(data=confirm,aes(x=date,y=real,colour = '实际数据'),size=0.9)+
+  geom_line(data=confirm,aes(x=date,y=c1,colour = '悲观情况'))+ #确诊
+  geom_line(data=confirm,aes(x=date,y=c2, colour = '中性情况'))+#新增
+  #geom_line(data=confirm,aes(x=date,y=c4, colour = 'test'))+
+  geom_line(data=confirm,aes(x=date,y=c3, colour = '乐观情况'))+
+  scale_color_discrete(limits=c("悲观情况","中性情况","乐观情况","实际数据"))+
+  xlab("预测始自05/10/2020")+
+  ylab("人数")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  labs(title="美国累计确诊人数预测",caption = '数据截至05/09/2020',color='')+
+  scale_x_date(date_breaks = "5 days")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))+ 
+  theme(axis.title.x = element_text(size = rel(1), vjust=-2, angle = 00))
+ 
+g1<-g1+theme_calc ()+theme(text = element_text(family = 'STKaiti'))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))+ 
+  theme(axis.title.x = element_text(size = rel(1), vjust=-2, angle = 00))
+g1
+
+g2<-ggplot(infected,aes(x=date)) + 
+  theme_grey(base_family = "STKaiti" )+
+  geom_point(data=infected,aes(x=date,y=real,colour = '实际数据'),size=0.9)+
+  geom_line(data=infected,aes(x=date,y=I1,colour = '悲观情况'))+ #确诊
+  geom_line(data=infected,aes(x=date,y=I2, colour = '中性情况'))+#新增
+  geom_line(data=infected,aes(x=date,y=I3, colour = '乐观情况'))+
+  scale_color_discrete(limits=c("悲观情况","中性情况","乐观情况","实际数据"))+
+  xlab("预测始自05/10/2020")+
+  ylab("人数")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  labs(title="美国现存确诊人数预测",caption = '数据截至05/09/2020',color='')+
+  scale_x_date(date_breaks = "5 days")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))+ 
+  theme(axis.title.x = element_text(size = rel(1), vjust=-2, angle = 00))
+g2<-g2+theme_calc ()+theme(text = element_text(family = 'STKaiti'))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))+ 
+  theme(axis.title.x = element_text(size = rel(1), vjust=-2, angle = 00))
+g2
+ggsave(g1,filename = 'g1.jpg',width = 9,height = 5,dpi = 600)
+ggsave(g2,filename = 'g2.jpg',width = 9,height = 5,dpi = 600)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

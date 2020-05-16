@@ -1,0 +1,202 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(deSolve)
+library(propagate)
+library(dplyr)
+options(scipen=200)
+getCountry <- function(country){
+  areadata <- select(data,contains(country))
+  colnames(areadata)=c("confirm","heal","death")#,"added"
+  areadata$removed <- areadata$heal + areadata$death
+  areadata$infected <- areadata$confirm - areadata$removed
+  areadata <- cbind(date=data$date,areadata)
+  for (i in 2:nrow(data)){
+    areadata$added[i]<-areadata$confirm[i]-areadata$confirm[i-1]
+  }
+  return(areadata)
+}
+```
+
+```{r}
+imput<-read.csv('/Users/zhen/疫情预测/0509/0509.csv')
+imput[1:nrow(imput),2:ncol(imput)]<-as.matrix(imput[1:nrow(imput),2:ncol(imput)])
+imput[is.na(imput)]<-0
+#data<-read.csv('/Users/xiahaoran/pred.csv')
+day.total<-nrow(imput)
+data<-imput[1:day.total,]
+#data<-imput[(day.total-day.imput+1):day.total,]#47 54
+rownames(data) <- seq(1,nrow(data),1)
+```
+
+```{r}
+name<-"美国"
+all<-getCountry(name)
+start<-which(all$confirm>=1000)[1]
+#day.imput<- 12#输入时长
+#all<-all[(day.total-day.imput+1):day.total,]
+#all<-all[41:nrow(all),]
+#<-all[1:(start-1),]
+all<-all[start:(nrow(all)),]
+rownames(all) <- seq(1,nrow(all),1)
+```
+
+```{r}
+#历史图
+library(ggplot2)
+ggplot(all,aes(x=date))+
+  theme_grey(base_family = "STKaiti" )+
+  geom_point(data=all,aes(y=confirm, colour = '累计确诊'))+
+  geom_point(data=all,aes(y=added, colour = '日新增确诊'))+
+  #geom_point(data=all,aes(y=infected, colour = '现存感染'))+
+  xlab(" ")+
+  ylab("人数")+
+  labs(title=paste(name, "实际数据", sep = ""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))
+```
+
+```{r}
+#输入数据
+time<-1:nrow(all)#实际观测天数
+confirm<-data.frame(time=time,number=all$confirm)
+name1<-"累计确诊"
+mydata<-confirm#add#infect#confirm#add
+meanday<-3
+days<-16#实际预测步长
+day1<-days+meanday-1 #预测步长
+real<-c(mydata$number,rep(NA,days))
+ptime<-1:(nrow(all)+days)#包含预测
+ptime1<-1:(nrow(all)+day1)
+mydata2<-add
+name2<-"每日新增"
+firstday<-all[1,1]
+temp <- seq.Date(from = as.Date(as.character(firstday)), by = "day", length.out =length(ptime))#poly
+temp1 <- seq.Date(from = as.Date(as.character(firstday)), by = "day", length.out = length(ptime1))#logi
+```
+
+```{r}
+#loess短期不要用
+model<-loess(number~time,data=mydata,span=0.75,degree=1)
+lowess<-predict(model, time)
+mydata<-data.frame(time=time,number=lowess)
+#model2<-loess(number~time,data=mydata2,span=0.75,degree=2)
+#lowess2<-predict(model2, time)
+#mydata2<-data.frame(time=time,number=lowess2)
+```
+
+```{r}
+library(dplyr)
+library(rollRegres)
+library(zoo)
+reg_fun<-function(data){
+  coef(lm(number~time+I(time^2),as.data.frame(data)))
+}
+c2<-rollapply(mydata,width=5,reg_fun,by.column = FALSE,fill = NA_real_, align = "right")
+
+v<-matrix(NA,nrow(all)+day1,meanday)
+for (i in (nrow(all)-meanday+1):nrow(all)){
+    time<-1:(i+day1)
+    c<-as.matrix(c2[i,])
+    d<-as.matrix(data.frame(inter=rep(1,length(time)),time=time,time2=time^2))
+    value<-d%*%c
+    for(j in 1:length(value)){
+      v[j,i-(nrow(all)-meanday)]<-value[j]
+    }
+}
+df<-data.frame(date=temp1,v)
+#wt=c(1,1,2,2,5)
+wt=c(1,2,7)
+mean<-matrix(NA,(nrow(v)-meanday+1))
+for (i in 1:(nrow(v)-meanday+1)){
+  mean[i]<-weighted.mean((v[i,]),wt)
+}
+df1<-data.frame(date=temp,predic=mean)
+
+```
+
+
+```{r}
+#polynomial model（最fit）
+library(dplyr)
+#model.poly<-lm(number~time+I(time^2)+I(time^3),data=mydata)#predict新增
+model.poly<-lm(number~time+I(time^2),data=mydata)
+summary(model.poly)
+pred.poly<-predict(model.poly,newdata=data.frame(time=ptime),interval="confidence",level=0.95)
+prediction.poly<-data.frame(date=temp,real=real,poly.lwr=pred.poly[,2],poly.fit=pred.poly[,1],
+                            poly.uppr=pred.poly[,3])
+```
+
+```{r}
+#确定logistics曲线拟合的初始值（可取天数的最短）
+SS <- getInitial(number ~ SSlogis(time, alpha, xmid, scale), data = mydata)
+K_start <- SS["alpha"]
+R_start <- 1/SS["scale"]
+N0_start <- SS["alpha"]/(exp(SS["xmid"]/SS["scale"])+1)
+#拟合logistics曲线
+mod<-nls(number ~ (k*p*exp(r*time))/(k+p*(exp(r*time)-1)), data=mydata, start = list(k = K_start, r = R_start, p = N0_start))
+#summary(mod)
+confint(mod)#得到拟合参数的置信区间
+pred.logi<-predictNLS(mod,newdata=data.frame(time=ptime),interval="confidence",level=0.99)
+pp<-pred.logi$summary
+prediction.logi<-data.frame(temp,logi.lwr=pp$`Prop.2.5%`,logi.fit=pp$Prop.Mean.1, logi.uppr=pp$`Prop.97.5%`)
+```
+
+
+```{r}
+#real<-c(all$confirm,rep(NA,days))
+#real2<-c(all$added,rep(NA,days))
+#real<-c(all$confirm,rep(NA,days))
+#final<-cbind(temp1,real,prediction.logi[,2:4],real2,prediction.poly[,2:4])
+#final<-cbind(temp1,real,prediction.logi[,2:4])
+```
+
+
+
+```{r}
+library(ggplot2)
+real<-data.frame(temp1,number=c(all$confirm,rep(NA,days)))
+#real2<-data.frame(temp1,number=c(all$add,rep(NA,days)))
+p1<-ggplot() + 
+  theme_grey(base_family = "STKaiti" )+
+  geom_line(aes(x=temp1,y=prediction.logi$logi.fit,color="Logistic拟合"))+ #确诊
+  geom_line(aes(x=temp1,y=prediction.poly$poly.fit,color="Polynomial拟合"))+#新增 
+  geom_point(aes(x=temp1,y=real$number,color=paste("实际",name1,sep = "")))+
+  #geom_point(aes(x=temp1,y=real2$number,color=paste("实际",name2,sep = "")))+
+  xlab(" ")+
+  ylab("人数")+
+  theme(plot.title = element_text(color = 'black',size=15,hjust=0.5))+
+  #labs(title='伊朗新增人数预测')+
+  labs(title=paste(name,name1 ,"人数预测", sep = ""))+
+  #labs(title=paste(name,name2 ,"人数预测", sep = ""))+
+  #labs(title='法国累计确诊人数Polynomial预测')+
+  #labs(caption = '（lowess平滑处理后）')+
+  scale_x_date(date_breaks = "5 days")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5))
+p1
+```
+
+
+
+```{r}
+final1<-cbind(real,prediction.poly[,2:4])
+final2<-cbind(real,prediction.logi[,2:4])
+#final<-cbind(real,prediction.logi[,2:4],real2,prediction.poly[,2:4])
+final<-cbind(real,prediction.logi[,2:4],prediction.poly[,2:4])
+write.csv(final,paste("/Users/xiahaoran/Desktop/",name,name1,".csv",sep = ""))
+#ggsave(p1,filename = paste(name,name1,'.jpg',sep = ""),width = 8,height = 4,dpi = 600)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

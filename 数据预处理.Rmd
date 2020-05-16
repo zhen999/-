@@ -1,0 +1,57 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(deSolve)
+library(propagate)
+library(dplyr)
+library(tidyr)
+```
+
+```{r}
+data<-read.csv('/Users/xiahaoran/Desktop/0418/0418.csv')
+getData <- function(country){
+  world <- select(data,contains(country))
+  world<- data.frame(confirm=world[,1],heal=world[,3],dead=world[,2])
+  return(world)
+}
+
+country<-c("全球","除中国","日本","印度","伊朗","德国","英国","法国","意大利","俄罗斯","美国","巴西")
+data.all<-matrix(NA,nrow(data),3*length(country))
+data.all<-as.data.frame(data.all)
+for (i in 1:length(country)){
+  for (j in 1:3){
+    #a<-getData(country[i])
+    data.all[3*(i-1)+j]<-getData(country[i])[j]
+  }
+}
+colnames(data.all)<-rep(country,each=3)
+data.out<-data.frame(date=data$国家,data.all)
+colnames(data.all)<-rep(country,each=3)
+world<- getData("全球")
+other <- getData("除中国")
+#japan <- getData("日本")
+#korea <- getData("韩国")
+german <- getData("德国")
+eng <- getData("英国")
+#france <- getData("法国")
+italy <- getData("意大利")
+span <- getData("西班牙")
+iran <- getData("伊朗")
+us <- getData("美国")
+swiss <- getData("瑞士")	
+write.csv(data.out,"/Users/xiahaoran/Desktop/0412/dataout.csv")
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
